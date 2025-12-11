@@ -5,43 +5,55 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:  # Manual trigger from Actions tab
 
 jobs:
   build:
-    runs-on: macos-13  # Or macos-latest for iOS 18+ support
+    runs-on: macos-15  # Updated: Latest stable (Sequoia); use macos-latest for auto-upgrade
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Cache Theos & SDKs  # Speeds up by 80%
+    - name: Cache Theos & SDKs  # Aggressive caching for <2 min rebuilds
       uses: actions/cache@v4
       with:
         path: |
           ~/.theos
           ~/Library/Developer/Xcode/iOS DeviceSupport
-        key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}-${{ hashFiles('**/*.xm', '**/*.mm') }}
-        restore-keys: ${{ runner.os }}-theos-
+          ~/Library/Caches/com.apple.dt.Xcode
+        key: ${{ runner.os }}-theos-v15-${{ hashFiles('**/Makefile') }}-${{ hashFiles('**/*.xm', '**/*.mm') }}-${{ hashFiles('**/.theos/**') }}
+        restore-keys: |
+          ${{ runner.os }}-theos-v15-
+          ${{ runner.os }}-theos-
 
-    - name: Setup Theos  # Handles install + deps (ldid, xz, etc.)
-      uses: Randomblock1/theos-action@v1  # Latest as of Dec 2025
+    - name: Setup Theos  # Auto-installs Theos, SDKs, and deps (ldid, xz, etc.)
+      uses: Randomblock1/theos-action@v1  # Latest fork (Dec 2025); handles iOS 18+
       with:
-        sdk: iphoneos18.0  # Match your device (or iphoneos17.0 for older)
+        sdk: iphoneos18.2  # Bump for latest iOS; fallback to iphoneos18.0 if issues
         theos: master
-        theos-sdks: 'https://github.com/theos/sdks'  # Official, auto-updates
+        theos-sdks: 'https://github.com/theos/sdks'  # Official repo
         theos-sdks-branch: master
-        orion: 'false'  # ObjC only – set true for Swift
+        orion: 'false'  # ObjC tweak; set 'true' for Swift
 
-    - name: Install Extra Deps (if needed)
-      run: brew install ldid xz  # For signing/packaging
+    - name: Install Extra Deps (Brew Packages)
+      run: |
+        brew install --quiet ldid xz automake autoconf libtool  # For signing/packaging; quiet to reduce logs
 
     - name: Build Tweak
-      run: make clean package FINALPACKAGE=1  # Outputs .dylib in .theos/packages/
+      run: |
+        make clean
+        make package FINALPACKAGE=1
+      env:
+        THEOS_DEVICE_IP: ''  # No device needed for package-only
 
-    - name: Upload Artifact  # Download ready .dylib from Actions tab
+    - name: Verify Output
+      run: ls -la .theos/packages/  # Debug: Check .dylib exists
+
+    - name: Upload Artifact  # Download from Actions > Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: SubwayUnlimitedCoins.dylib
-        path: .theos/packages/*.dylib
-        retention-days: 30  # Keeps for a month
+        path: .theos/packages/com.yourname.subwayunlimitedcoins_*.dylib  # Match your TWEAK_NAME
+        retention-days: 30
+        compression-level: 0  # No zip for direct use
