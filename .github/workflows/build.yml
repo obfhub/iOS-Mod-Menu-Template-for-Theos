@@ -1,0 +1,47 @@
+name: Build Subway Unlimited Coins Dylib
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  build:
+    runs-on: macos-13  # Or macos-latest for iOS 18+ support
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Cache Theos & SDKs  # Speeds up by 80%
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.theos
+          ~/Library/Developer/Xcode/iOS DeviceSupport
+        key: ${{ runner.os }}-theos-${{ hashFiles('**/Makefile') }}-${{ hashFiles('**/*.xm', '**/*.mm') }}
+        restore-keys: ${{ runner.os }}-theos-
+
+    - name: Setup Theos  # Handles install + deps (ldid, xz, etc.)
+      uses: Randomblock1/theos-action@v1  # Latest as of Dec 2025
+      with:
+        sdk: iphoneos18.0  # Match your device (or iphoneos17.0 for older)
+        theos: master
+        theos-sdks: 'https://github.com/theos/sdks'  # Official, auto-updates
+        theos-sdks-branch: master
+        orion: 'false'  # ObjC only – set true for Swift
+
+    - name: Install Extra Deps (if needed)
+      run: brew install ldid xz  # For signing/packaging
+
+    - name: Build Tweak
+      run: make clean package FINALPACKAGE=1  # Outputs .dylib in .theos/packages/
+
+    - name: Upload Artifact  # Download ready .dylib from Actions tab
+      uses: actions/upload-artifact@v4
+      with:
+        name: SubwayUnlimitedCoins.dylib
+        path: .theos/packages/*.dylib
+        retention-days: 30  # Keeps for a month
